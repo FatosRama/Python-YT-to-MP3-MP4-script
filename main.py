@@ -59,6 +59,9 @@ class App(tk.Tk):
             'ffmpeg_location': 'C:/ffmpeg/bin',
             'format': 'bestaudio/best',
             'outtmpl': f'{folder_path}/%(title)s.%(ext)s',
+            'socket_timeout': 30,
+            'retries': 10,
+            'fragment_retries': 10,
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -76,7 +79,11 @@ class App(tk.Tk):
             'ffmpeg_location': 'C:/ffmpeg/bin',
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
             'merge_output_format': 'mp4',
-            'outtmpl': f'{folder_path}/%(title)s.%(ext)s'
+            'outtmpl': f'{folder_path}/%(title)s.%(ext)s',
+            'socket_timeout': 30,
+            'retries': 10,
+            'fragment_retries': 10,
+            'nocheckcertificate': True
         }
         try:
             with YoutubeDL(ydl_opts) as ydl:
