@@ -44,13 +44,14 @@ class HoverButton(tk.Button):
 class ConverterTab(tk.Frame):
     """One converter page: format picker, URL, save folder, download button and progress."""
 
-    def __init__(self, master, platform, accent, accent_hover, accent_fg, enabled=True):
+    url_label = "URL"
+
+    def __init__(self, master, platform, accent, accent_hover, accent_fg):
         super().__init__(master, bg=BG)
         self.platform = platform
         self.accent = accent
         self.accent_hover = accent_hover
         self.accent_fg = accent_fg
-        self.enabled = enabled
 
         self.format = tk.StringVar(value="MP3")
         self.downloading = False
@@ -74,9 +75,13 @@ class ConverterTab(tk.Frame):
                  font=(FONT, 10)).pack(anchor="w", pady=(2, 22))
 
         # Format toggle
-        self.section_label(body, "FORMAT")
-        toggle = tk.Frame(body, bg=SURFACE)
-        toggle.pack(anchor="w", pady=(6, 20))
+        format_row = tk.Frame(body, bg=BG)
+        format_row.pack(fill="x", pady=(0, 20))
+        format_col = tk.Frame(format_row, bg=BG)
+        format_col.pack(side="left")
+        self.section_label(format_col, "FORMAT")
+        toggle = tk.Frame(format_col, bg=SURFACE)
+        toggle.pack(anchor="w", pady=(6, 0))
         self.mp3_button = HoverButton(toggle, text="♪  MP3  ·  Audio", font=(FONT, 11, "bold"),
                                       width=16, pady=8, command=lambda: self.select_format("MP3"))
         self.mp3_button.pack(side="left", padx=3, pady=3)
@@ -84,10 +89,10 @@ class ConverterTab(tk.Frame):
                                       width=16, pady=8, command=lambda: self.select_format("MP4"))
         self.mp4_button.pack(side="left", padx=(0, 3), pady=3)
         self.select_format("MP3")
+        self.build_extra_options(format_row)
 
         # URL input
-        url_label = "INSTAGRAM REEL URL" if self.platform == "Instagram" else f"{self.platform.upper()} URL"
-        self.section_label(body, url_label)
+        self.section_label(body, f"{self.platform.upper()} {self.url_label}")
         url_row = tk.Frame(body, bg=BG)
         url_row.pack(fill="x", pady=(6, 20))
         self.url_entry = self.make_entry(url_row)
@@ -122,6 +127,9 @@ class ConverterTab(tk.Frame):
         self.status_label.pack(side="left", fill="x", expand=True)
         self.open_folder_button = HoverButton(status_row, text="Open folder", font=(FONT, 9, "bold"),
                                               fg=self.accent, padx=10, command=self.open_folder)
+
+    def build_extra_options(self, parent):
+        """Hook for platform-specific controls next to the format toggle."""
 
     def section_label(self, parent, text):
         tk.Label(parent, text=text, bg=BG, fg=MUTED, font=(FONT, 9, "bold")).pack(anchor="w")
@@ -234,6 +242,7 @@ class ConverterTab(tk.Frame):
             'quiet': True,
             'noprogress': True,
         })
+        ydl_opts.update(self.extra_ydl_options(folder_path))
         try:
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
@@ -241,6 +250,14 @@ class ConverterTab(tk.Frame):
             self.after(0, self.download_finished, False, str(e))
         else:
             self.after(0, self.download_finished, True, folder_path)
+
+    def extra_ydl_options(self, folder_path):
+        """Hook for platform-specific yt-dlp options, applied on top of the defaults."""
+        return {}
+
+    def friendly_error(self, message):
+        """Hook to turn a yt-dlp error into something more helpful."""
+        return message
 
     def download_finished(self, success, info):
         self.downloading = False
@@ -254,7 +271,8 @@ class ConverterTab(tk.Frame):
         else:
             self.progress["value"] = 0
             self.set_status("✕  Download failed", ERROR)
-            messagebox.showerror("Error", f"An error occurred while downloading the {self.format.get()}: {info}")
+            messagebox.showerror("Error", f"An error occurred while downloading the {self.format.get()}: "
+                                          f"{self.friendly_error(info)}")
 
     def download_media(self):
         if self.downloading:
@@ -273,9 +291,6 @@ class ConverterTab(tk.Frame):
             self.set_status("That folder doesn't exist.", ERROR)
             self.folder_path_entry.focus_set()
             return
-        if not self.enabled:
-            self.set_status(f"{self.platform} downloads are coming soon.", MUTED)
-            return
 
         self.downloading = True
         self.open_folder_button.pack_forget()
@@ -287,6 +302,56 @@ class ConverterTab(tk.Frame):
 
         target = self.download_mp3 if self.format.get() == "MP3" else self.download_mp4
         threading.Thread(target=target, args=(url, folder_path), daemon=True).start()
+
+
+class InstagramTab(ConverterTab):
+    """Public reels download without a login; the browser picker is for private or restricted posts."""
+
+    url_label = "REEL URL"
+    browsers = ["None", "Firefox", "Chrome", "Edge", "Brave", "Opera"]
+
+    def build_extra_options(self, parent):
+        self.browser = tk.StringVar(value="None")
+
+        col = tk.Frame(parent, bg=BG)
+        col.pack(side="right", anchor="n")
+        self.section_label(col, "USE LOGIN FROM")
+        picker = tk.Menubutton(col, textvariable=self.browser, bg=SURFACE, fg=TEXT,
+                               activebackground=SURFACE_HOVER, activeforeground=TEXT, relief="flat",
+                               bd=0, font=(FONT, 11, "bold"), width=12, pady=11, cursor="hand2",
+                               indicatoron=True)
+        picker.pack(anchor="w", pady=(6, 0))
+        menu = tk.Menu(picker, tearoff=0, bg=SURFACE, fg=TEXT, activebackground=self.accent,
+                       activeforeground=TEXT, bd=0, font=(FONT, 10))
+        for name in self.browsers:
+            menu.add_radiobutton(label=name, variable=self.browser, value=name)
+        picker.config(menu=menu)
+
+    def extra_ydl_options(self, folder_path):
+        opts = {
+            # Instagram titles are all "Video by <user>", so add the post ID to keep names unique
+            'outtmpl': f'{folder_path}/%(title)s [%(id)s].%(ext)s',
+            # Some reels have no sound: MP3 should fail clearly, MP4 can still save the silent video
+            'format': ('bestaudio/best[acodec!=none]' if self.format.get() == "MP3"
+                       else 'bestvideo*+bestaudio/best'),
+        }
+        if self.browser.get() != "None":
+            opts['cookiesfrombrowser'] = (self.browser.get().lower(),)
+        return opts
+
+    def friendly_error(self, message):
+        lowered = message.lower()
+        if "requested format is not available" in lowered and self.format.get() == "MP3":
+            return "This reel has no sound, so there's no audio to save as an MP3."
+        if "empty media response" in lowered or "login" in lowered:
+            return ("Instagram wouldn't share this post without a login (it may be private or "
+                    "age-restricted).\n\nLog in to Instagram in your browser, then choose that browser "
+                    "under \"Use login from\" and try again.")
+        if "cookie" in lowered or "decrypt" in lowered:
+            return (f"Couldn't read the login from {self.browser.get()}. Close the browser completely "
+                    "and try again, or use Firefox (Chrome and Edge often lock their cookies).\n\n"
+                    f"Details: {message}")
+        return message
 
 
 class App(tk.Tk):
@@ -354,7 +419,7 @@ class App(tk.Tk):
 
         self.tabs = {
             "YouTube": ConverterTab(content, "YouTube", ACCENT, ACCENT_HOVER, BG),
-            "Instagram": ConverterTab(content, "Instagram", IG_ACCENT, IG_ACCENT_HOVER, TEXT, enabled=False),
+            "Instagram": InstagramTab(content, "Instagram", IG_ACCENT, IG_ACCENT_HOVER, TEXT),
         }
         icons = {"YouTube": "▶", "Instagram": "◎"}
 
