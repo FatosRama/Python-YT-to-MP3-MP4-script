@@ -300,6 +300,8 @@ class App(tk.Tk):
         ydl_opts.update({
             'progress_hooks': [self.progress_hook],
             'postprocessor_hooks': [self.postprocessor_hook],
+            # YouTube needs a JS runtime to unlock formats; yt-dlp only enables deno by default
+            'js_runtimes': {'deno': {}, 'node': {}},
             'quiet': True,
             'noprogress': True,
         })
