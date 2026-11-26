@@ -18,6 +18,8 @@ TEXT = "#E6F4F7"
 MUTED = "#7FA7AF"
 ERROR = "#E5736B"
 SUCCESS = "#5BD08A"
+IG_ACCENT = "#E1306C"
+IG_ACCENT_HOVER = "#F0568A"
 
 FONT = "Segoe UI"
 
@@ -39,75 +41,34 @@ class HoverButton(tk.Button):
         self.config(bg=bg, fg=fg, activebackground=hover_bg, activeforeground=fg)
 
 
-class App(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Youtube to MP3/MP4 Converter")
-        self.resizable(False, False)
-        self.overrideredirect(True)
-        self.iconbitmap("./images/app_logo.ico")
-        self.window_width = 720
-        self.window_height = 600
-        self.x = (self.winfo_screenwidth() // 2) - (self.window_width // 2)
-        self.y = (self.winfo_screenheight() // 2) - (self.window_height // 2)
-        self.geometry(f"{self.window_width}x{self.window_height}+{self.x}+{self.y}")
-        self.configure(bg=ACCENT)  # Shows as a 1px border around the window
+class ConverterTab(tk.Frame):
+    """One converter page: format picker, URL, save folder, download button and progress."""
+
+    def __init__(self, master, platform, accent, accent_hover, accent_fg, enabled=True):
+        super().__init__(master, bg=BG)
+        self.platform = platform
+        self.accent = accent
+        self.accent_hover = accent_hover
+        self.accent_fg = accent_fg
+        self.enabled = enabled
 
         self.format = tk.StringVar(value="MP3")
         self.downloading = False
         self.last_folder = None
 
-        self.root_frame = tk.Frame(self, bg=BG)
-        self.root_frame.pack(fill="both", expand=True, padx=1, pady=1)
+        self.progress_style = f"{platform}.Horizontal.TProgressbar"
+        ttk.Style(self).configure(self.progress_style, troughcolor=SURFACE, background=accent,
+                                  bordercolor=SURFACE, lightcolor=accent, darkcolor=accent, thickness=10)
 
-        self.build_title_bar()
-        self.build_body()
-        self.setup_styles()
-
-        self.bind("<Return>", lambda e: self.download_media())
-        self.bind("<Map>", self.on_restore)
-        self.after(10, self.show_in_taskbar)
+        self.build()
 
     # ---------- UI construction ----------
 
-    def setup_styles(self):
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("Accent.Horizontal.TProgressbar", troughcolor=SURFACE, background=ACCENT,
-                        bordercolor=SURFACE, lightcolor=ACCENT, darkcolor=ACCENT, thickness=10)
+    def build(self):
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=40, pady=(22, 24))
 
-    def build_title_bar(self):
-        bar = tk.Frame(self.root_frame, bg=SURFACE, height=40)
-        bar.pack(fill="x")
-        bar.pack_propagate(False)
-
-        try:
-            logo = tk.PhotoImage(file="./images/app_logo.png")
-            self.logo_image = logo.subsample(max(1, logo.width() // 28))
-            tk.Label(bar, image=self.logo_image, bg=SURFACE).pack(side="left", padx=(12, 6))
-        except tk.TclError:
-            pass
-
-        title = tk.Label(bar, text="YT Converter", bg=SURFACE, fg=TEXT, font=(FONT, 10, "bold"))
-        title.pack(side="left")
-
-        close_btn = HoverButton(bar, text="✕", bg=SURFACE, hover_bg="#C0392B", fg=TEXT,
-                                font=(FONT, 11), width=4, command=self.destroy)
-        close_btn.pack(side="right", fill="y")
-        min_btn = HoverButton(bar, text="—", bg=SURFACE, hover_bg=SURFACE_HOVER, fg=TEXT,
-                              font=(FONT, 10), width=4, command=self.minimize)
-        min_btn.pack(side="right", fill="y")
-
-        # Let the user drag the borderless window around by its title bar
-        for widget in (bar, title):
-            widget.bind("<ButtonPress-1>", self.start_move)
-            widget.bind("<B1-Motion>", self.do_move)
-
-    def build_body(self):
-        body = tk.Frame(self.root_frame, bg=BG)
-        body.pack(fill="both", expand=True, padx=40, pady=(28, 24))
-
-        tk.Label(body, text="Youtube to MP3/MP4 Converter", bg=BG, fg=ACCENT,
+        tk.Label(body, text=f"{self.platform} to MP3/MP4 Converter", bg=BG, fg=self.accent,
                  font=(FONT, 20, "bold")).pack(anchor="w")
         tk.Label(body, text="Paste a link, pick a format, and hit download.", bg=BG, fg=MUTED,
                  font=(FONT, 10)).pack(anchor="w", pady=(2, 22))
@@ -125,11 +86,12 @@ class App(tk.Tk):
         self.select_format("MP3")
 
         # URL input
-        self.section_label(body, "YOUTUBE URL")
+        url_label = "INSTAGRAM REEL URL" if self.platform == "Instagram" else f"{self.platform.upper()} URL"
+        self.section_label(body, url_label)
         url_row = tk.Frame(body, bg=BG)
         url_row.pack(fill="x", pady=(6, 20))
         self.url_entry = self.make_entry(url_row)
-        HoverButton(url_row, text="Paste", font=(FONT, 10, "bold"), width=9,
+        HoverButton(url_row, text="Paste", font=(FONT, 10, "bold"), width=9, fg=self.accent,
                     command=self.paste_url).pack(side="left", fill="y", padx=(8, 0))
 
         # Folder input
@@ -137,21 +99,20 @@ class App(tk.Tk):
         folder_row = tk.Frame(body, bg=BG)
         folder_row.pack(fill="x", pady=(6, 24))
         self.folder_path_entry = self.make_entry(folder_row)
-        HoverButton(folder_row, text="Browse", font=(FONT, 10, "bold"), width=9,
+        HoverButton(folder_row, text="Browse", font=(FONT, 10, "bold"), width=9, fg=self.accent,
                     command=self.browse_folder).pack(side="left", fill="y", padx=(8, 0))
         default_folder = os.path.join(os.path.expanduser("~"), "Downloads")
         if os.path.isdir(default_folder):
             self.folder_path_entry.insert(0, default_folder)
 
         # Download button
-        self.download_button = HoverButton(body, text="Download", bg=ACCENT, hover_bg=ACCENT_HOVER,
-                                           fg=BG, font=(FONT, 13, "bold"), pady=10,
+        self.download_button = HoverButton(body, text="Download", bg=self.accent, hover_bg=self.accent_hover,
+                                           fg=self.accent_fg, font=(FONT, 13, "bold"), pady=10,
                                            command=self.download_media)
         self.download_button.pack(fill="x")
 
         # Progress + status
-        self.progress = ttk.Progressbar(body, style="Accent.Horizontal.TProgressbar",
-                                        mode="determinate", maximum=100)
+        self.progress = ttk.Progressbar(body, style=self.progress_style, mode="determinate", maximum=100)
         self.progress.pack(fill="x", pady=(18, 6))
 
         status_row = tk.Frame(body, bg=BG)
@@ -160,7 +121,7 @@ class App(tk.Tk):
                                      anchor="w")
         self.status_label.pack(side="left", fill="x", expand=True)
         self.open_folder_button = HoverButton(status_row, text="Open folder", font=(FONT, 9, "bold"),
-                                              padx=10, command=self.open_folder)
+                                              fg=self.accent, padx=10, command=self.open_folder)
 
     def section_label(self, parent, text):
         tk.Label(parent, text=text, bg=BG, fg=MUTED, font=(FONT, 9, "bold")).pack(anchor="w")
@@ -171,51 +132,19 @@ class App(tk.Tk):
         border.pack(side="left", fill="x", expand=True)
         inner = tk.Frame(border, bg=SURFACE)
         inner.pack(fill="x", padx=1, pady=1)
-        entry = tk.Entry(inner, font=(FONT, 12), bg=SURFACE, fg=TEXT, insertbackground=ACCENT,
+        entry = tk.Entry(inner, font=(FONT, 12), bg=SURFACE, fg=TEXT, insertbackground=self.accent,
                          relief="flat", bd=0)
         entry.pack(fill="x", padx=10, ipady=8)
-        entry.bind("<FocusIn>", lambda e: border.config(bg=ACCENT))
+        entry.bind("<FocusIn>", lambda e: border.config(bg=self.accent))
         entry.bind("<FocusOut>", lambda e: border.config(bg=SURFACE_HOVER))
         return entry
-
-    # ---------- Window behaviour ----------
-
-    def start_move(self, event):
-        self.drag_x = event.x_root - self.winfo_x()
-        self.drag_y = event.y_root - self.winfo_y()
-
-    def do_move(self, event):
-        self.geometry(f"+{event.x_root - self.drag_x}+{event.y_root - self.drag_y}")
-
-    def minimize(self):
-        # Borderless windows can't be iconified, so temporarily restore the frame
-        self.overrideredirect(False)
-        self.iconify()
-
-    def on_restore(self, event):
-        if self.state() == "normal" and not self.overrideredirect():
-            self.overrideredirect(True)
-            self.show_in_taskbar()
-
-    def show_in_taskbar(self):
-        # Borderless windows are hidden from the taskbar by default, so flag it as an app window
-        GWL_EXSTYLE = -20
-        WS_EX_APPWINDOW = 0x00040000
-        WS_EX_TOOLWINDOW = 0x00000080
-        hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-        # The window has to be re-shown for the style change to take effect
-        self.withdraw()
-        self.after(10, self.deiconify)
 
     # ---------- Actions ----------
 
     def select_format(self, fmt):
         self.format.set(fmt)
         selected, other = (self.mp3_button, self.mp4_button) if fmt == "MP3" else (self.mp4_button, self.mp3_button)
-        selected.set_colors(ACCENT, ACCENT_HOVER, BG)
+        selected.set_colors(self.accent, self.accent_hover, self.accent_fg)
         other.set_colors(SURFACE, SURFACE_HOVER, MUTED)
 
     def paste_url(self):
@@ -265,7 +194,7 @@ class App(tk.Tk):
 
     def update_progress(self, percent, text):
         self.progress["value"] = percent
-        self.set_status(text, ACCENT)
+        self.set_status(text, self.accent)
 
     def download_mp3(self, url, folder_path):
         ydl_opts = {
@@ -316,7 +245,7 @@ class App(tk.Tk):
     def download_finished(self, success, info):
         self.downloading = False
         self.download_button.config(state="normal", text="Download")
-        self.download_button.set_colors(ACCENT, ACCENT_HOVER, BG)
+        self.download_button.set_colors(self.accent, self.accent_hover, self.accent_fg)
         if success:
             self.last_folder = info
             self.progress["value"] = 100
@@ -333,7 +262,7 @@ class App(tk.Tk):
         url = self.url_entry.get().strip()
         folder_path = self.folder_path_entry.get().strip()
         if not url:
-            self.set_status("Please enter a Youtube URL.", ERROR)
+            self.set_status(f"Please enter a {self.platform} URL.", ERROR)
             self.url_entry.focus_set()
             return
         if not folder_path:
@@ -344,6 +273,9 @@ class App(tk.Tk):
             self.set_status("That folder doesn't exist.", ERROR)
             self.folder_path_entry.focus_set()
             return
+        if not self.enabled:
+            self.set_status(f"{self.platform} downloads are coming soon.", MUTED)
+            return
 
         self.downloading = True
         self.open_folder_button.pack_forget()
@@ -351,10 +283,140 @@ class App(tk.Tk):
         self.download_button.config(state="disabled", text="Downloading…")
         self.download_button.set_colors(SURFACE_HOVER, SURFACE_HOVER, MUTED)
         self.download_button.config(disabledforeground=MUTED)
-        self.set_status("Starting download…", ACCENT)
+        self.set_status("Starting download…", self.accent)
 
         target = self.download_mp3 if self.format.get() == "MP3" else self.download_mp4
         threading.Thread(target=target, args=(url, folder_path), daemon=True).start()
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("YouTube & Instagram Converter")
+        self.resizable(False, False)
+        self.overrideredirect(True)
+        self.iconbitmap("./images/app_logo.ico")
+        self.window_width = 720
+        self.window_height = 640
+        self.x = (self.winfo_screenwidth() // 2) - (self.window_width // 2)
+        self.y = (self.winfo_screenheight() // 2) - (self.window_height // 2)
+        self.geometry(f"{self.window_width}x{self.window_height}+{self.x}+{self.y}")
+        self.configure(bg=ACCENT)  # Shows as a 1px border around the window
+
+        ttk.Style(self).theme_use("clam")
+
+        self.root_frame = tk.Frame(self, bg=BG)
+        self.root_frame.pack(fill="both", expand=True, padx=1, pady=1)
+
+        self.build_title_bar()
+        self.build_tabs()
+
+        self.bind("<Return>", lambda e: self.current_tab.download_media())
+        self.bind("<Map>", self.on_restore)
+        self.after(10, self.show_in_taskbar)
+
+    # ---------- UI construction ----------
+
+    def build_title_bar(self):
+        bar = tk.Frame(self.root_frame, bg=SURFACE, height=40)
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
+
+        try:
+            logo = tk.PhotoImage(file="./images/app_logo.png")
+            self.logo_image = logo.subsample(max(1, logo.width() // 28))
+            tk.Label(bar, image=self.logo_image, bg=SURFACE).pack(side="left", padx=(12, 6))
+        except tk.TclError:
+            pass
+
+        title = tk.Label(bar, text="Media Converter", bg=SURFACE, fg=TEXT, font=(FONT, 10, "bold"))
+        title.pack(side="left")
+
+        close_btn = HoverButton(bar, text="✕", bg=SURFACE, hover_bg="#C0392B", fg=TEXT,
+                                font=(FONT, 11), width=4, command=self.destroy)
+        close_btn.pack(side="right", fill="y")
+        min_btn = HoverButton(bar, text="—", bg=SURFACE, hover_bg=SURFACE_HOVER, fg=TEXT,
+                              font=(FONT, 10), width=4, command=self.minimize)
+        min_btn.pack(side="right", fill="y")
+
+        # Let the user drag the borderless window around by its title bar
+        for widget in (bar, title):
+            widget.bind("<ButtonPress-1>", self.start_move)
+            widget.bind("<B1-Motion>", self.do_move)
+
+    def build_tabs(self):
+        tab_bar = tk.Frame(self.root_frame, bg=BG)
+        tab_bar.pack(fill="x", padx=40, pady=(14, 0))
+        tk.Frame(self.root_frame, bg=SURFACE_HOVER, height=1).pack(fill="x", padx=40)
+
+        content = tk.Frame(self.root_frame, bg=BG)
+        content.pack(fill="both", expand=True)
+
+        self.tabs = {
+            "YouTube": ConverterTab(content, "YouTube", ACCENT, ACCENT_HOVER, BG),
+            "Instagram": ConverterTab(content, "Instagram", IG_ACCENT, IG_ACCENT_HOVER, TEXT, enabled=False),
+        }
+        icons = {"YouTube": "▶", "Instagram": "◎"}
+
+        self.tab_buttons = {}
+        for name in self.tabs:
+            holder = tk.Frame(tab_bar, bg=BG)
+            holder.pack(side="left", padx=(0, 6))
+            button = HoverButton(holder, text=f"{icons[name]}  {name}", bg=BG, hover_bg=SURFACE,
+                                 fg=MUTED, font=(FONT, 11, "bold"), padx=16, pady=6,
+                                 command=lambda n=name: self.show_tab(n))
+            button.pack()
+            underline = tk.Frame(holder, bg=BG, height=3)
+            underline.pack(fill="x")
+            self.tab_buttons[name] = (button, underline)
+
+        self.show_tab("YouTube")
+
+    def show_tab(self, name):
+        for tab_name, (button, underline) in self.tab_buttons.items():
+            tab = self.tabs[tab_name]
+            if tab_name == name:
+                button.set_colors(BG, SURFACE, tab.accent)
+                underline.config(bg=tab.accent)
+                tab.pack(fill="both", expand=True)
+            else:
+                button.set_colors(BG, SURFACE, MUTED)
+                underline.config(bg=BG)
+                tab.pack_forget()
+        self.current_tab = self.tabs[name]
+        self.configure(bg=self.current_tab.accent)  # Window border follows the active tab's color
+
+    # ---------- Window behaviour ----------
+
+    def start_move(self, event):
+        self.drag_x = event.x_root - self.winfo_x()
+        self.drag_y = event.y_root - self.winfo_y()
+
+    def do_move(self, event):
+        self.geometry(f"+{event.x_root - self.drag_x}+{event.y_root - self.drag_y}")
+
+    def minimize(self):
+        # Borderless windows can't be iconified, so temporarily restore the frame
+        self.overrideredirect(False)
+        self.iconify()
+
+    def on_restore(self, event):
+        if self.state() == "normal" and not self.overrideredirect():
+            self.overrideredirect(True)
+            self.show_in_taskbar()
+
+    def show_in_taskbar(self):
+        # Borderless windows are hidden from the taskbar by default, so flag it as an app window
+        GWL_EXSTYLE = -20
+        WS_EX_APPWINDOW = 0x00040000
+        WS_EX_TOOLWINDOW = 0x00000080
+        hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        # The window has to be re-shown for the style change to take effect
+        self.withdraw()
+        self.after(10, self.deiconify)
 
 
 if __name__ == "__main__":
